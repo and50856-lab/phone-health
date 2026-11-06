@@ -44,7 +44,7 @@ public class MainActivity extends AppCompatActivity {
 
         setContentView(layout);
 
-        scanBtn.v.setOnClickListener(v -> {}); // заглушка
+        scanBtn.setOnClickListener(v -> {}); // заглушка
 
         scanBtn.setOnClickListener(v -> {
             scanBtn.setEnabled(false);
