@@ -19,20 +19,21 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Setup Gradle
+    - name: Setup Gradle 8.7
       uses: gradle/actions/setup-gradle@v3
       with:
-        gradle-version-file: gradle/wrapper/gradle-wrapper.properties
-        cache: false
+        gradle-version: '8.7'
 
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew || true
+    # Этот шаг создаст тот самый пропавший jar-файл автоматизации
+    - name: Generate Gradle Wrapper
+      run: gradle wrapper --gradle-version 8.7
 
+    # Собираем дебаг-версию (она сама подпишется и установится на телефон)
     - name: Build Target APK (Phone Health)
-      run: ./gradlew :app:assemble
+      run: ./gradlew :app:assembleDebug
 
     - name: Upload Target APK Artifact
       uses: actions/upload-artifact@v4
       with:
         name: PhoneHealth-Target
-        path: app/build/outputs/apk/
+        path: app/build/outputs/apk/debug/
