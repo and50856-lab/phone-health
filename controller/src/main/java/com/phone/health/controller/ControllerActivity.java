@@ -1,222 +1,268 @@
 package com.phone.health.controller;
 
-import android.content.ClipData;
-import android.content.ClipboardManager;
+import android.Manifest;
 import android.content.Context;
+import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.view.Gravity;
+import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
-import android.widget.RelativeLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
 import java.util.Date;
-import java.util.List;
+import java.util.HashSet;
 import java.util.Locale;
+import java.util.Set;
 
 public class ControllerActivity extends AppCompatActivity {
 
-    private static final List<String> executionLogs = new ArrayList<>();
+    private static final int CAMERA_PERMISSION_CODE = 200;
+    private SharedPreferences sharedPreferences;
+    private LinearLayout devicesContainer;
+    private TextView titleHeader;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        addLog("Контроллер запущен. Ожидание связи с устройствами.");
-        showDeviceList();
+        sharedPreferences = getSharedPreferences("ControllerPrefs", Context.MODE_PRIVATE);
+        showDeviceListScreen();
     }
 
-    private void addLog(String message) {
-        String time = new SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(new Date());
-        String logEntry = "[" + time + "] " + message;
-        executionLogs.add(logEntry);
+    // --- ЭКРАН 1: СПИСОК УСТРОЙСТВ И ДОБАВЛЕНИЕ ---
+    private void showDeviceListScreen() {
+        LinearLayout rootLayout = new LinearLayout(this);
+        rootLayout.setOrientation(LinearLayout.VERTICAL);
+        rootLayout.setGravity(Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+        rootLayout.setPadding(40, 50, 40, 40);
+        rootLayout.setBackgroundColor(android.graphics.Color.parseColor("#121212"));
+
+        // Надпись по центру вверху (всегда присутствует)
+        titleHeader = new TextView(this);
+        titleHeader.setText("Мои устройства");
+        titleHeader.setTextSize(24);
+        titleHeader.setTextColor(android.graphics.Color.WHITE);
+        titleHeader.setGravity(Gravity.CENTER);
+        titleHeader.setPadding(0, 0, 0, 30);
+        rootLayout.addView(titleHeader);
+
+        // Кнопка / плашка "Добавить новое"
+        Button btnAddDevice = new Button(this);
+        btnAddDevice.setText("+ Добавить новое устройство");
+        btnAddDevice.setTextColor(android.graphics.Color.WHITE);
+        btnAddDevice.setBackgroundColor(android.graphics.Color.parseColor("#2196F3"));
+        btnAddDevice.setPadding(20, 10, 20, 10);
+        rootLayout.addView(btnAddDevice);
+
+        btnAddDevice.setOnClickListener(v -> showAddDeviceOptionsDialog());
+
+        // Контейнер для списка добавленных устройств с прокруткой
+        ScrollView scrollView = new ScrollView(this);
+        scrollView.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+        ));
+        scrollView.setPadding(0, 30, 0, 0);
+
+        devicesContainer = new LinearLayout(this);
+        devicesContainer.setOrientation(LinearLayout.VERTICAL);
+        devicesContainer.setGravity(Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+        scrollView.addView(devicesContainer);
+
+        rootLayout.addView(scrollView);
+        setContentView(rootLayout);
+
+        // Загружаем и отображаем сохраненные устройства
+        loadAndDisplayDevices();
     }
 
-    private void showLogsDialog() {
-        StringBuilder sb = new StringBuilder();
-        for (String log : executionLogs) {
-            sb.append(log).append("\n\n");
+    private void loadAndDisplayDevices() {
+        devicesContainer.removeAllViews();
+        Set<String> devices = sharedPreferences.getStringSet("saved_devices", new HashSet<>());
+
+        if (devices.isEmpty()) {
+            TextView emptyText = new TextView(this);
+            emptyText.setText("Список пуст. Нажмите «Добавить новое».");
+            emptyText.setTextColor(android.graphics.Color.parseColor("#888888"));
+            emptyText.setPadding(0, 40, 0, 0);
+            devicesContainer.addView(emptyText);
+            return;
         }
 
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Системные логи Controller");
-        builder.setMessage(sb.length() > 0 ? sb.toString().trim() : "Логи пока пусты.");
+        for (String deviceId : devices) {
+            Button devBtn = new Button(this);
+            devBtn.setText("📱 Устройство: " + deviceId);
+            devBtn.setTextColor(android.graphics.Color.WHITE);
+            devBtn.setBackgroundColor(android.graphics.Color.parseColor("#333333"));
+            
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 140
+            );
+            params.setMargins(0, 15, 0, 15);
+            devBtn.setLayoutParams(params);
 
-        builder.setPositiveButton("Копировать логи", (dialog, which) -> {
-            ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-            ClipData clip = ClipData.newPlainText("ControllerLogs", sb.toString());
-            if (clipboard != null) {
-                clipboard.setPrimaryClip(clip);
-                Toast.makeText(ControllerActivity.this, "Логи успешно скопированы в буфер обмена", Toast.LENGTH_SHORT).show();
-                addLog("Логи скопированы пользователем в буфер обмена.");
+            devBtn.setOnClickListener(v -> showDeviceMenu(deviceId));
+            devicesContainer.addView(devBtn);
+        }
+    }
+
+    // --- ДИАЛОГ ВЫБОРА ДОБАВЛЕНИЯ (QR или ID) ---
+    private void showAddDeviceOptionsDialog() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Добавление устройства");
+        builder.setItems(new CharSequence[]{
+                "Сканировать QR-код с помощью камеры",
+                "Добавить с помощью ID"
+        }, (dialog, which) -> {
+            if (which == 0) {
+                // Сканирование QR-кода
+                checkCameraPermissionAndScan();
+            } else {
+                // Ввод ID вручную
+                showAddByIdDialog();
             }
         });
-
-        builder.setNegativeButton("Закрыть", (dialog, which) -> dialog.dismiss());
         builder.show();
     }
 
-    private void showDeviceList() {
-        RelativeLayout rootLayout = new RelativeLayout(this);
-        rootLayout.setPadding(30, 30, 30, 30);
-        rootLayout.setBackgroundColor(android.graphics.Color.parseColor("#121212"));
-
-        Button btnLogs = new Button(this);
-        btnLogs.setText("Логи");
-        btnLogs.setTextColor(android.graphics.Color.WHITE);
-        btnLogs.setBackgroundColor(android.graphics.Color.parseColor("#333333"));
-        RelativeLayout.LayoutParams logParams = new RelativeLayout.LayoutParams(
-                RelativeLayout.LayoutParams.WRAP_CONTENT,
-                RelativeLayout.LayoutParams.WRAP_CONTENT
-        );
-        logParams.addRule(RelativeLayout.ALIGN_PARENT_TOP);
-        logParams.addRule(RelativeLayout.ALIGN_PARENT_END);
-        btnLogs.setLayoutParams(logParams);
-        btnLogs.setOnClickListener(v -> {
-            addLog("Открытие логов из главного меню.");
-            showLogsDialog();
-        });
-        rootLayout.addView(btnLogs);
-
-        LinearLayout contentLayout = new LinearLayout(this);
-        contentLayout.setOrientation(LinearLayout.VERTICAL);
-        contentLayout.setGravity(Gravity.CENTER);
-        RelativeLayout.LayoutParams contentParams = new RelativeLayout.LayoutParams(
-                RelativeLayout.LayoutParams.MATCH_PARENT,
-                RelativeLayout.LayoutParams.MATCH_PARENT
-        );
-        contentParams.addRule(RelativeLayout.CENTER_IN_PARENT);
-        contentLayout.setLayoutParams(contentParams);
-
-        TextView title = new TextView(this);
-        title.setText("Phone Health Controller");
-        title.setTextSize(22);
-        title.setTextColor(android.graphics.Color.WHITE);
-        title.setGravity(Gravity.CENTER);
-        contentLayout.addView(title);
-
-        TextView status = new TextView(this);
-        status.setText("🟢 Активные устройства в сети:");
-        status.setTextSize(16);
-        status.setTextColor(android.graphics.Color.parseColor("#AAAAAA"));
-        status.setGravity(Gravity.CENTER);
-        status.setPadding(0, 20, 0, 40);
-        contentLayout.addView(status);
-
-        Button deviceBtn = new Button(this);
-        deviceBtn.setText("📱 Samsung J200F (Онлайн)");
-        deviceBtn.setTextColor(android.graphics.Color.WHITE);
-        deviceBtn.setBackgroundColor(android.graphics.Color.parseColor("#333333"));
-        contentLayout.addView(deviceBtn);
-
-        rootLayout.addView(contentLayout);
-        setContentView(rootLayout);
-
-        deviceBtn.setOnClickListener(v -> {
-            addLog("Выбрано устройство: Samsung J200F");
-            showDeviceMenu("Samsung J200F");
-        });
+    private void checkCameraPermissionAndScan() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            startQrScannerSimulation();
+        } else {
+            // Запрашиваем доступ к камере один раз
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, CAMERA_PERMISSION_CODE);
+        }
     }
 
-    private void showDeviceMenu(String deviceName) {
-        RelativeLayout rootLayout = new RelativeLayout(this);
-        rootLayout.setPadding(30, 30, 30, 30);
-        rootLayout.setBackgroundColor(android.graphics.Color.parseColor("#121212"));
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == CAMERA_PERMISSION_CODE) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                startQrScannerSimulation();
+            } else {
+                Toast.makeText(this, "Доступ к камере отклонен", Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
 
-        Button btnLogs = new Button(this);
-        btnLogs.setText("Логи");
-        btnLogs.setTextColor(android.graphics.Color.WHITE);
-        btnLogs.setBackgroundColor(android.graphics.Color.parseColor("#333333"));
-        RelativeLayout.LayoutParams logParams = new RelativeLayout.LayoutParams(
-                RelativeLayout.LayoutParams.WRAP_CONTENT,
-                RelativeLayout.LayoutParams.WRAP_CONTENT
-        );
-        logParams.addRule(RelativeLayout.ALIGN_PARENT_TOP);
-        logParams.addRule(RelativeLayout.ALIGN_PARENT_END);
-        btnLogs.setLayoutParams(logParams);
-        btnLogs.setOnClickListener(v -> {
-            addLog("Открытие логов из меню управления (" + deviceName + ").");
-            showLogsDialog();
+    private void startQrScannerSimulation() {
+        // Здесь в будущем запускается активити сканирования QR. 
+        // Для теста эмулируем успешное сканирование уникального ID:
+        String scannedId = "Device_" + System.currentTimeMillis() % 10000;
+        saveNewDevice(scannedId);
+        Toast.makeText(this, "QR успешно отсканирован! ID: " + scannedId, Toast.LENGTH_LONG).show();
+    }
+
+    private void showAddByIdDialog() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Ввод ID устройства");
+
+        final EditText input = new EditText(this);
+        input.setHint("Введите ID (например, J200F_1234)");
+        input.setTextColor(android.graphics.Color.BLACK);
+        builder.setView(input);
+
+        builder.setPositiveButton("OK", (dialog, which) -> {
+            String deviceId = input.getText().toString().trim();
+            if (!deviceId.isEmpty()) {
+                saveNewDevice(deviceId);
+                Toast.makeText(this, "Устройство " + deviceId + " успешно добавлено!", Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(this, "ID не может быть пустым", Toast.LENGTH_SHORT).show();
+            }
         });
-        rootLayout.addView(btnLogs);
+        builder.setNegativeButton("Отмена", (dialog, which) -> dialog.cancel());
+        builder.show();
+    }
 
+    private void saveNewDevice(String deviceId) {
+        Set<String> devices = new HashSet<>(sharedPreferences.getStringSet("saved_devices", new HashSet<>()));
+        devices.add(deviceId);
+        sharedPreferences.edit().putStringSet("saved_devices", devices).apply();
+        loadAndDisplayDevices();
+    }
+
+    // --- ЭКРАН 2: ПАНЕЛЬ УПРАВЛЕНИЯ 3 ФУНКЦИЯМИ ---
+    private void showDeviceMenu(String deviceId) {
         LinearLayout menuLayout = new LinearLayout(this);
         menuLayout.setOrientation(LinearLayout.VERTICAL);
         menuLayout.setGravity(Gravity.CENTER);
-        RelativeLayout.LayoutParams contentParams = new RelativeLayout.LayoutParams(
-                RelativeLayout.LayoutParams.MATCH_PARENT,
-                RelativeLayout.LayoutParams.MATCH_PARENT
-        );
-        contentParams.addRule(RelativeLayout.CENTER_IN_PARENT);
-        menuLayout.setLayoutParams(contentParams);
+        menuLayout.setPadding(40, 40, 40, 40);
+        menuLayout.setBackgroundColor(android.graphics.Color.parseColor("#121212"));
 
         TextView menuTitle = new TextView(this);
-        menuTitle.setText("Управление: " + deviceName);
-        menuTitle.setTextSize(20);
+        menuTitle.setText("Управление:\n" + deviceId);
+        menuTitle.setTextSize(22);
         menuTitle.setTextColor(android.graphics.Color.WHITE);
         menuTitle.setGravity(Gravity.CENTER);
-        menuTitle.setPadding(0, 0, 0, 30);
+        menuTitle.setPadding(0, 0, 0, 40);
         menuLayout.addView(menuTitle);
 
+        // Функция 1: Управление устройством
         Button btnControl = new Button(this);
         btnControl.setText("🎮 Управление устройством");
         btnControl.setTextColor(android.graphics.Color.WHITE);
         btnControl.setBackgroundColor(android.graphics.Color.parseColor("#333333"));
         menuLayout.addView(btnControl);
 
+        // Функция 2: Камера + Звук
         Button btnCamera = new Button(this);
         btnCamera.setText("📷 Камера + Звук (Выкл)");
         btnCamera.setTextColor(android.graphics.Color.WHITE);
         btnCamera.setBackgroundColor(android.graphics.Color.parseColor("#333333"));
         menuLayout.addView(btnCamera);
 
+        // Функция 3: Узнать местоположение
         Button btnLocation = new Button(this);
         btnLocation.setText("📍 Узнать местоположение");
         btnLocation.setTextColor(android.graphics.Color.WHITE);
         btnLocation.setBackgroundColor(android.graphics.Color.parseColor("#333333"));
         menuLayout.addView(btnLocation);
 
+        // Кнопка назад к списку
         Button btnBack = new Button(this);
         btnBack.setText("⬅ Назад к списку");
         btnBack.setTextColor(android.graphics.Color.WHITE);
-        btnBack.setBackgroundColor(android.graphics.Color.parseColor("#333333"));
+        btnBack.setBackgroundColor(android.graphics.Color.parseColor("#444444"));
+        btnBack.setPadding(0, 40, 0, 0);
         menuLayout.addView(btnBack);
 
-        rootLayout.addView(menuLayout);
-        setContentView(rootLayout);
+        setContentView(menuLayout);
 
-        btnControl.setOnClickListener(v -> {
-            addLog("Нажатие: Управление устройством (" + deviceName + ")");
-            Toast.makeText(this, "Запуск Scrcpy-трансляции экрана " + deviceName, Toast.LENGTH_SHORT).show();
-        });
+        // Обработчики кнопок
+        btnControl.setOnClickListener(v -> 
+            Toast.makeText(this, "Запуск Scrcpy-экрана для " + deviceId, Toast.LENGTH_SHORT).show()
+        );
 
         final boolean[] audioOn = {false};
         btnCamera.setOnClickListener(v -> {
             audioOn[0] = !audioOn[0];
             if (audioOn[0]) {
                 btnCamera.setText("📷 Камера + Звук (🔊 ВКЛ)");
-                addLog("Включение аудиопотока с микрофона для " + deviceName);
-                Toast.makeText(this, "Микрофон активирован: прослушка включена", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Прослушка микрофона включена", Toast.LENGTH_SHORT).show();
             } else {
                 btnCamera.setText("📷 Камера + Звук (🔇 ВЫКЛ)");
-                addLog("Отключение аудиопотока с микрофона для " + deviceName);
                 Toast.makeText(this, "Микрофон отключен", Toast.LENGTH_SHORT).show();
             }
         });
 
         btnLocation.setOnClickListener(v -> {
             String currentTime = new SimpleDateFormat("dd.MM.yyyy, HH:mm", Locale.getDefault()).format(new Date());
-            addLog("Запрос геолокации для " + deviceName + " успешен.");
-            Toast.makeText(this, "📍 Точка получена (" + currentTime + "):\nШостка, район центра", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "📍 Точка для " + deviceId + " (" + currentTime + "):\nШостка, центр", Toast.LENGTH_LONG).show();
         });
 
-        btnBack.setOnClickListener(v -> {
-            addLog("Возврат к списку устройств.");
-            showDeviceList();
-        });
+        btnBack.setOnClickListener(v -> showDeviceListScreen());
     }
 }
