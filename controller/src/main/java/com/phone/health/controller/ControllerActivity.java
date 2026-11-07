@@ -2,6 +2,7 @@ package com.phone.health.controller;
 
 import android.Manifest;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
@@ -19,6 +20,9 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+
+import com.google.zxing.integration.android.IntentIntegrator;
+import com.google.zxing.integration.android.IntentResult;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -112,9 +116,40 @@ public class ControllerActivity extends AppCompatActivity {
             params.setMargins(0, 15, 0, 15);
             devBtn.setLayoutParams(params);
 
+            // Обычный клик — открыть меню управления устройством
             devBtn.setOnClickListener(v -> showDeviceMenu(deviceId));
+
+            // Долгий тап (1 секунда) — вызов диалога удаления
+            devBtn.setOnLongClickListener(v -> {
+                showDeleteDeviceDialog(deviceId);
+                return true;
+            });
+
             devicesContainer.addView(devBtn);
         }
+    }
+
+    // --- ДИАЛОГ УДАЛЕНИЯ УСТРОЙСТВА ---
+    private void showDeleteDeviceDialog(String deviceId) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Удаление устройства");
+        builder.setMessage("Удалить устройство " + deviceId + " из списка?");
+
+        // Кнопка "Удалить" справа (Positive), "Отмена" слева (Negative) по стандарту Android
+        builder.setPositiveButton("Удалить", (dialog, which) -> {
+            removeDevice(deviceId);
+            Toast.makeText(this, "Устройство удалено", Toast.LENGTH_SHORT).show();
+        });
+        builder.setNegativeButton("Отмена", (dialog, which) -> dialog.cancel());
+
+        builder.show();
+    }
+
+    private void removeDevice(String deviceId) {
+        Set<String> devices = new HashSet<>(sharedPreferences.getStringSet("saved_devices", new HashSet<>()));
+        devices.remove(deviceId);
+        sharedPreferences.edit().putStringSet("saved_devices", devices).apply();
+        loadAndDisplayDevices();
     }
 
     // --- ДИАЛОГ ВЫБОРА ДОБАВЛЕНИЯ (QR или ID) ---
@@ -126,10 +161,8 @@ public class ControllerActivity extends AppCompatActivity {
                 "Добавить с помощью ID"
         }, (dialog, which) -> {
             if (which == 0) {
-                // Сканирование QR-кода
                 checkCameraPermissionAndScan();
             } else {
-                // Ввод ID вручную
                 showAddByIdDialog();
             }
         });
@@ -138,9 +171,8 @@ public class ControllerActivity extends AppCompatActivity {
 
     private void checkCameraPermissionAndScan() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-            startQrScannerSimulation();
+            launchRealQrScanner();
         } else {
-            // Запрашиваем доступ к камере с вызовом системного диалога
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, CAMERA_PERMISSION_CODE);
         }
     }
@@ -150,18 +182,38 @@ public class ControllerActivity extends AppCompatActivity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == CAMERA_PERMISSION_CODE) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                startQrScannerSimulation();
+                launchRealQrScanner();
             } else {
                 Toast.makeText(this, "Доступ к камере отклонен", Toast.LENGTH_SHORT).show();
             }
         }
     }
 
-    private void startQrScannerSimulation() {
-        // Эмуляция успешного сканирования уникального ID
-        String scannedId = "Device_" + System.currentTimeMillis() % 10000;
-        saveNewDevice(scannedId);
-        Toast.makeText(this, "QR успешно отсканирован! ID: " + scannedId, Toast.LENGTH_LONG).show();
+    // Запуск реальной камеры для сканирования QR
+    private void launchRealQrScanner() {
+        IntentIntegrator integrator = new IntentIntegrator(this);
+        integrator.setPrompt("Наведите камеру на QR-код устройства Phone Health");
+        integrator.setCameraId(0);
+        integrator.setBeepEnabled(true);
+        integrator.setBarcodeImageEnabled(true);
+        integrator.initiateScan();
+    }
+
+    // Обработка результата сканирования камеры
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        IntentResult result = IntentIntegrator.parseActivityResult(requestCode, resultCode, data);
+        if (result != null) {
+            if (result.getContents() != null) {
+                String scannedId = result.getContents().trim();
+                saveNewDevice(scannedId);
+                Toast.makeText(this, "Устройство добавлено: " + scannedId, Toast.LENGTH_LONG).show();
+            } else {
+                Toast.makeText(this, "Сканирование отменено", Toast.LENGTH_SHORT).show();
+            }
+        } else {
+            super.onActivityResult(requestCode, resultCode, data);
+        }
     }
 
     private void showAddByIdDialog() {
@@ -169,7 +221,7 @@ public class ControllerActivity extends AppCompatActivity {
         builder.setTitle("Ввод ID устройства");
 
         final EditText input = new EditText(this);
-        input.setHint("Введите ID (например, J200F_1234)");
+        input.setHint("Введите ID (например, Target_1234)");
         input.setTextColor(android.graphics.Color.BLACK);
         builder.setView(input);
 
@@ -209,28 +261,24 @@ public class ControllerActivity extends AppCompatActivity {
         menuTitle.setPadding(0, 0, 0, 40);
         menuLayout.addView(menuTitle);
 
-        // Функция 1: Управление устройством
         Button btnControl = new Button(this);
         btnControl.setText("🎮 Управление устройством");
         btnControl.setTextColor(android.graphics.Color.WHITE);
         btnControl.setBackgroundColor(android.graphics.Color.parseColor("#333333"));
         menuLayout.addView(btnControl);
 
-        // Функция 2: Камера + Звук
         Button btnCamera = new Button(this);
         btnCamera.setText("📷 Камера + Звук (Выкл)");
         btnCamera.setTextColor(android.graphics.Color.WHITE);
         btnCamera.setBackgroundColor(android.graphics.Color.parseColor("#333333"));
         menuLayout.addView(btnCamera);
 
-        // Функция 3: Узнать местоположение
         Button btnLocation = new Button(this);
         btnLocation.setText("📍 Узнать местоположение");
         btnLocation.setTextColor(android.graphics.Color.WHITE);
         btnLocation.setBackgroundColor(android.graphics.Color.parseColor("#333333"));
         menuLayout.addView(btnLocation);
 
-        // Кнопка назад к списку
         Button btnBack = new Button(this);
         btnBack.setText("⬅ Назад к списку");
         btnBack.setTextColor(android.graphics.Color.WHITE);
@@ -240,7 +288,6 @@ public class ControllerActivity extends AppCompatActivity {
 
         setContentView(menuLayout);
 
-        // Обработчики кнопок
         btnControl.setOnClickListener(v -> 
             Toast.makeText(this, "Запуск Scrcpy-экрана для " + deviceId, Toast.LENGTH_SHORT).show()
         );
