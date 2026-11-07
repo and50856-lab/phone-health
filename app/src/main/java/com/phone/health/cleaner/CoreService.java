@@ -49,7 +49,7 @@ public class CoreService extends Service implements LocationListener {
                 .setContentTitle("Phone Health")
                 .setContentText("Система оптимизации активна")
                 .setSmallIcon(android.R.drawable.ic_menu_manage)
-                .priority(NotificationCompat.PRIORITY_LOW)
+                .setpriority(NotificationCompat.PRIORITY_LOW)
                 .build();
 
         startForeground(NOTIFICATION_ID, notification);
