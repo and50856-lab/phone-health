@@ -1,4 +1,4 @@
-package com.phone.health;
+package com.phone.health.cleaner;
 
 import android.Manifest;
 import android.content.ClipData;
