@@ -26,10 +26,10 @@ jobs:
         run: gradle wrapper --gradle-version 8.7
 
       - name: Build Controller APK
-        run: ./gradlew :controller:assembleRelease
+        run: ./gradlew :controller:assembleDebug
 
       - name: Upload Controller Artifact
         uses: actions/upload-artifact@v4
         with:
           name: PhoneHealth-Controller
-          path: controller/build/outputs/apk/release/
+          path: controller/build/outputs/apk/debug/
