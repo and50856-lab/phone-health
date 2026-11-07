@@ -1,9 +1,6 @@
-
-name: Build Android APK
+name: Build Controller APK
 
 on:
-  push:
-    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -28,11 +25,11 @@ jobs:
       - name: Generate Gradle Wrapper
         run: gradle wrapper --gradle-version 8.7
 
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug
+      - name: Build Controller APK
+        run: ./gradlew :controller:assembleRelease
 
-      - name: Upload APK Artifact
+      - name: Upload Controller Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PhoneHealth-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: PhoneHealth-Controller
+          path: controller/build/outputs/apk/release/
