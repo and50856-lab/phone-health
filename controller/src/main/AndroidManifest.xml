@@ -22,5 +22,11 @@
             </intent-filter>
         </activity>
 
+        <!-- Системная активность сканера из библиотеки ZXing -->
+        <activity
+            android:name="com.journeyapps.barcodescanner.CaptureActivity"
+            android:screenOrientation="fullSensor"
+            stateConfigChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout" />
+
     </application>
 </manifest>
