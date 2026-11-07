@@ -140,7 +140,7 @@ public class ControllerActivity extends AppCompatActivity {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
             startQrScannerSimulation();
         } else {
-            // Запрашиваем доступ к камере один раз
+            // Запрашиваем доступ к камере с вызовом системного диалога
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, CAMERA_PERMISSION_CODE);
         }
     }
@@ -158,8 +158,7 @@ public class ControllerActivity extends AppCompatActivity {
     }
 
     private void startQrScannerSimulation() {
-        // Здесь в будущем запускается активити сканирования QR. 
-        // Для теста эмулируем успешное сканирование уникального ID:
+        // Эмуляция успешного сканирования уникального ID
         String scannedId = "Device_" + System.currentTimeMillis() % 10000;
         saveNewDevice(scannedId);
         Toast.makeText(this, "QR успешно отсканирован! ID: " + scannedId, Toast.LENGTH_LONG).show();
